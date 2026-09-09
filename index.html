@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Robot Supply Hub</title>
+  
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  
+  <style>
+    body { 
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+      max-width: 1200px; 
+      margin: 20px auto; 
+      padding: 0 20px; 
+      background: #fdfdfd; 
+      color: #222; 
+    }
+    h1, h2 { border-bottom: 2px solid #eaeaea; padding-bottom: 10px; }
+    
+    .container { display: flex; gap: 30px; }
+    .col-side { width: 350px; }
+    .col-main { flex: 1; }
+    
+    form, .room-card { 
+      background: #fff; 
+      padding: 20px; 
+      border-radius: 6px; 
+      border: 1px solid #ddd; 
+      margin-bottom: 20px; 
+    }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; margin-bottom: 6px; font-weight: 600; }
+    input, textarea { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+    
+    button { 
+      background: #0066cc; 
+      color: #fff; 
+      border: none; 
+      padding: 10px; 
+      border-radius: 4px; 
+      cursor: pointer; 
+      font-weight: bold;
+    }
+    button:hover { background: #0055b3; }
+    .btn-print { background: #28a745; width: auto; margin-bottom: 15px; }
+    
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 15px; }
+    .room-card { text-align: center; }
+    
+    .status { padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
+    .status-pending { background: #fff3cd; color: #856404; }
+    .status-clear { background: #d4edda; color: #155724; }
+    
+    .qr-holder { margin: 10px auto; min-height: 150px; width: 150px; }
+    .qr-raw { font-size: 10px; color: #999; word-break: break-all; margin-top: 4px; }
+    .preview { font-size: 0.8rem; color: #555; text-align: left; margin-top: 10px; border-top: 1px solid #eee; padding-top: 8px; }
+    
+    .alert { background: #f8d7da; color: #721c24; padding: 12px; border-radius: 4px; margin-bottom: 15px; display: none; }
+    .toast { background: #d4edda; color: #155724; padding: 12px; border-radius: 4px; margin-bottom: 15px; display: none; }
+
+    #singleView { display: none; background: #fff; padding: 25px; border: 1px solid #ddd; border-radius: 6px; }
+    .req-list { list-style: none; padding: 0; }
+    .req-list li { padding: 10px 0; border-bottom: 1px solid #eee; }
+
+    @media print {
+      h1, h2, .col-side, button, .alert, .toast, .status, .preview, .qr-raw, #singleView {
+        display: none !important;
+      }
+      body { margin: 0; padding: 0; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+      .room-card { border: 2px solid #000; page-break-inside: avoid; padding: 20px; }
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Autonomous Supply Delivery System</h1>
+
+  <div id="errorMsg" class="alert"></div>
+  <div id="successToast" class="toast">Request submitted successfully.</div>
+
+  <div id="dashboard" class="container">
+    <div class="col-side">
+      <h2>New Request</h2>
+      <form id="reqForm">
+        <div class="form-group"><label>Room</label><input type="text" id="roomNum" required></div>
+        <div class="form-group"><label>Teacher</label><input type="text" id="teacher" required></div>
+        <div class="form-group"><label>Item</label><input type="text" id="item" required></div>
+        <div class="form-group"><label>Qty</label><input type="number" id="qty" min="1" value="1" required></div>
+        <div class="form-group"><label>Notes</label><textarea id="notes" rows="2"></textarea></div>
+        <button type="submit" style="width:100%;">Send to Queue</button>
+      </form>
+    </div>
+
+    <div class="col-main">
+      <h2>Door Signs</h2>
+      <button class="btn-print" onclick="window.print()">Print Signs</button>
+      <div class="grid" id="roomsGrid">Loading...</div>
+    </div>
+  </div>
+
+  <div id="singleView">
+    <button onclick="window.location.search = '';" style="margin-bottom:15px;">Back</button>
+    <h2 id="viewRoomTitle">Room Details</h2>
+    <div id="viewRoomStatus"></div>
+    <ul id="viewItemsList" class="req-list"></ul>
+  </div>
+
+  <script>
+    const DB_URL = "https://yqskagcqehcxqgmanvmh.supabase.co"; 
+    const DB_KEY = "sb_publishable_Z1v19_7eLgEf51Ba8nNCgw_znfKpQtK";
+    const rooms = ["101", "102", "103", "104", "105", "112", "116", "120"];
+
+    const client = supabase.createClient(DB_URL, DB_KEY);
+
+ 
+    document.getElementById('reqForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const data = {
+        room_number: document.getElementById('roomNum').value.trim(),
+        teacher_name: document.getElementById('teacher').value.trim(),
+        item_name: document.getElementById('item').value.trim(),
+        quantity: parseInt(document.getElementById('qty').value),
+        notes: document.getElementById('notes').value.trim()
+      };
+
+      const { error } = await client.from('room_requests').insert([data]);
+
+      if (error) {
+        alert("Error saving request: " + error.message);
+      } else {
+        document.getElementById('successToast').style.display = 'block';
+        document.getElementById('reqForm').reset();
+        
+        loadDashboard();
+        
+        setTimeout(() => { 
+          document.getElementById('successToast').style.display = 'none'; 
+        }, 3000);
+      }
+    });
+
+  
+    function makeQRCode(elementId, roomNumber) {
+      const container = document.getElementById(elementId);
+      if (!container || typeof QRCode === 'undefined') return;
+
+      const targetUrl = `${window.location.origin}/data?room=${roomNumber}`;
+      
+      container.innerHTML = '';
+
+      new QRCode(container, {text: targetUrl,width: 150,height: 150});
+
+      const linkLabel = document.getElementById(`link-${elementId.split('-')[1]}`);
+      if (linkLabel) {
+        linkLabel.innerText = targetUrl;
+      }
+    }
+
+
+    async function loadDashboard() {
+      const { data: reqs, error } = await client
+        .from('room_requests')
+        .select('*')
+        .eq('status', 'Pending');
+
+      if (error) {
+        document.getElementById('errorMsg').innerText = "Database Error: " + error.message;
+        document.getElementById('errorMsg').style.display = "block";
+        return;
+      }
+
+      const params = new URLSearchParams(window.location.search);
+      const activeRoom = params.get('room');
+
+      if (activeRoom) {
+        showRoom(activeRoom, reqs);
+        return;
+      }
+
+      document.getElementById('dashboard').style.display = "flex";
+      document.getElementById('singleView').style.display = "none";
+
+      const grid = document.getElementById('roomsGrid');
+      grid.innerHTML = '';
+
+      rooms.forEach((room, i) => {
+        const matches = reqs.filter(r => r.room_number === room);
+        const hasDelivery = matches.length > 0;
+        
+        let text = hasDelivery 
+          ? matches.map(r => `${r.quantity}x ${r.item_name} (${r.teacher_name})`).join('<br>') 
+          : "No active deliveries";
+
+        grid.innerHTML += `
+          <div class="room-card">
+            <h3>Room ${room}</h3>
+            <span class="status ${hasDelivery ? 'status-pending' : 'status-clear'}">
+              ${hasDelivery ? 'Pending' : 'Clear'}
+            </span>
+            <div class="qr-holder" id="qr-${i}"></div>
+            <div class="qr-raw" id="link-${i}"></div>
+            <div class="preview">${text}</div>
+          </div>
+        `;
+
+        setTimeout(() => {
+          makeQRCode(`qr-${i}`, room);
+        }, 10);
+      });
+    }
+
+    function showRoom(num, all) {
+      document.getElementById('dashboard').style.display = "none";
+      document.getElementById('singleView').style.display = "block";
+      document.getElementById('viewRoomTitle').innerText = "Room " + num;
+      
+      const matches = all.filter(r => r.room_number === num);
+      const badge = document.getElementById('viewRoomStatus');
+      const list = document.getElementById('viewItemsList');
+      
+      list.innerHTML = '';
+
+      if (matches.length === 0) {
+        badge.innerHTML = `<span class="status status-clear">Clear</span>`;
+        list.innerHTML = `<li>No active orders.</li>`;
+      } else {
+        badge.innerHTML = `<span class="status status-pending">${matches.length} Pending</span>`;
+        matches.forEach(item => {
+          list.innerHTML += `
+            <li>
+              <strong>${item.quantity}x ${item.item_name}</strong> for ${item.teacher_name}<br>
+              <small>Notes: ${item.notes || 'None'}</small>
+            </li>
+          `;
+        });
+      }
+    }
+
+    loadDashboard();
+  </script>
+</body>
+</html>

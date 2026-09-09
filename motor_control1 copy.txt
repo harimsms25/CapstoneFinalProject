@@ -1,0 +1,216 @@
+#define Lpwm_pin  5   // ENA - left motor speed
+#define Rpwm_pin  6   // ENB - right motor speed
+#define ledPin   13
+
+int pinLB = 2;       // IN1 - left backward
+int pinLF = 4;       // IN2 - left forward
+int pinRB = 7;       // IN3 - right backward
+int pinRF = 8;       // IN4 - right forward
+
+int fwdSpeed = 100;
+int turnSpeed = 150;
+int min_speed = 80;
+int kick_start_delay = 100;
+int stopped_speed = 40;
+
+int state;
+
+int STOPPED = 0;
+int FORWARD = 1;
+int LEFT = 2;
+int RIGHT = 3;
+int BACKWARD = 4;
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(pinLB, OUTPUT);
+  pinMode(pinLF, OUTPUT);
+  pinMode(pinRB, OUTPUT);
+  pinMode(pinRF, OUTPUT);
+  pinMode(Lpwm_pin, OUTPUT);
+  pinMode(Rpwm_pin, OUTPUT);
+  stopp();
+}
+
+void loop() {
+  if (Serial.available() > 0) {
+    char cmd = Serial.read();
+    switch (cmd) {
+      case 'F': Serial.println("CMD:F forward");  go_forward(fwdSpeed);    break;
+      case 'B': Serial.println("CMD:B backward"); go_backward(fwdSpeed);   break;
+      case 'L': Serial.println("CMD:L left");     rotate_left(turnSpeed);  break;
+      case 'R': Serial.println("CMD:R right");    rotate_right(turnSpeed); break;
+      case 'l': Serial.println("CMD:l gleft");    glide_left(turnSpeed);   break;
+      case 'r': Serial.println("CMD:r gright");   glide_right(turnSpeed);  break;
+      case 'S': Serial.println("CMD:S stop");     stopp();                 break;
+      case 'V': parseSpeed();                                              break;
+      case 'K': parseKickStartDelay();                                     break;
+      case '1': led_on();                                                  break;
+      case '0': led_off();                                                 break;
+      default:  Serial.println("CMD:? unknown=");   Serial.println(cmd);   break;
+    }
+  }
+}
+
+void parseSpeed() {
+  String data = Serial.readStringUntil('\n');
+  int comma = data.indexOf(',');
+  if (comma > 0) {
+    fwdSpeed = constrain(data.substring(0, comma).toInt(), 0, 255);
+    turnSpeed = constrain(data.substring(comma + 1).toInt(), 0, 255);
+    Serial.print("CMD:V fwd=");
+    Serial.print(fwdSpeed);
+    Serial.print(" turn=");
+    Serial.println(turnSpeed);
+  }
+}
+
+void parseKickStartDelay() {
+  String data = Serial.readStringUntil('\n');
+  kick_start_delay = constrain(data.toInt(), 10, 5000);
+
+  Serial.print(" kick_start_delay=");
+  Serial.println(kick_start_delay);
+}
+
+void go_forward(unsigned char speed_val) {
+  digitalWrite(pinRB, HIGH);
+  digitalWrite(pinRF, LOW);
+  digitalWrite(pinLB, HIGH);
+  digitalWrite(pinLF, LOW);
+
+  if (state != FORWARD && speed_val < min_speed) {
+      kick_start();
+  }
+
+  if(speed_val > stopped_speed)
+    state = FORWARD;
+  else 
+    state = STOPPED;
+
+  analogWrite(Lpwm_pin, speed_val);
+  analogWrite(Rpwm_pin, speed_val);
+}
+
+void go_backward(unsigned char speed_val) {
+  digitalWrite(pinRB, LOW);
+  digitalWrite(pinRF, HIGH);
+  digitalWrite(pinLB, LOW);
+  digitalWrite(pinLF, HIGH);
+
+  if (state != BACKWARD && speed_val < min_speed) {
+      kick_start();
+  }
+  
+  if(speed_val > stopped_speed)
+    state = BACKWARD;
+  else 
+    state = STOPPED;
+
+  analogWrite(Lpwm_pin, speed_val);
+  analogWrite(Rpwm_pin, speed_val);
+}
+
+void rotate_left(unsigned char speed_val) {
+  digitalWrite(pinRB, HIGH);
+  digitalWrite(pinRF, LOW);
+  digitalWrite(pinLB, LOW);
+  digitalWrite(pinLF, HIGH);
+  
+  if (state != LEFT && speed_val < min_speed) {
+      kick_start();
+  }
+
+  if(speed_val > stopped_speed)
+    state = LEFT;
+  else 
+    state = STOPPED;
+
+  analogWrite(Lpwm_pin, speed_val);
+  analogWrite(Rpwm_pin, speed_val);
+}
+
+void glide_left(unsigned char speed_val) {
+  digitalWrite(pinRB, HIGH);
+  digitalWrite(pinRF, LOW);
+  digitalWrite(pinLB, HIGH);
+  digitalWrite(pinLF, LOW);
+  
+  if (state != LEFT && speed_val < min_speed) {
+      kick_start();
+  }
+
+  if(speed_val > stopped_speed)
+    state = LEFT;
+  else 
+    state = STOPPED;
+
+  analogWrite(Lpwm_pin, speed_val/2);
+  analogWrite(Rpwm_pin, speed_val);
+}
+
+
+void rotate_right(unsigned char speed_val) {
+  digitalWrite(pinRB, LOW);
+  digitalWrite(pinRF, HIGH);
+  digitalWrite(pinLB, HIGH);
+  digitalWrite(pinLF, LOW);
+
+  if (state != RIGHT && speed_val < min_speed) {
+      kick_start();
+  }
+
+  if(speed_val > stopped_speed)
+    state = RIGHT;
+  else 
+    state = STOPPED;
+
+  analogWrite(Lpwm_pin, speed_val);
+  analogWrite(Rpwm_pin, speed_val);
+}
+
+void glide_right(unsigned char speed_val) {
+  digitalWrite(pinRB, HIGH);
+  digitalWrite(pinRF, LOW);
+  digitalWrite(pinLB, HIGH);
+  digitalWrite(pinLF, LOW);
+
+  if (state != RIGHT && speed_val < min_speed) {
+      kick_start();
+  }
+
+  if(speed_val > stopped_speed)
+    state = RIGHT;
+  else 
+    state = STOPPED;
+
+  analogWrite(Lpwm_pin, speed_val);
+  analogWrite(Rpwm_pin, speed_val/2);
+}
+
+
+void stopp() {
+  state = STOPPED;
+  digitalWrite(pinRB, HIGH);
+  digitalWrite(pinRF, HIGH);
+  digitalWrite(pinLB, HIGH);
+  digitalWrite(pinLF, HIGH);
+  led_off();
+}
+
+void kick_start()
+{
+    analogWrite(Lpwm_pin, min_speed); 
+    analogWrite(Rpwm_pin, min_speed); 
+    delay(kick_start_delay);
+}
+
+void led_on()
+{
+  digitalWrite(ledPin, HIGH);
+}
+
+void led_off()
+{
+  digitalWrite(ledPin, LOW);
+}
